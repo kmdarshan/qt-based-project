@@ -1,0 +1,41 @@
+#ifndef RAWREQUESTSETTINGS_H
+#define RAWREQUESTSETTINGS_H
+
+#include "settings.h"
+#include <QString>
+
+class RawRequestSettings : public Settings
+{
+public:
+    RawRequestSettings();
+    ~RawRequestSettings();
+    void writeSettings();
+    void readSettings();
+    int requestType() const;
+    void setRequestType(int requestType);
+    const QString& requestString() const;
+    void setRequestString(const QString requestString);
+    const QString& postString() const;
+    void setPostString(const QString postString);
+    int postStringCheckBox() const;
+    void setPostStringCheckBox(int postStringCheck);
+    const QString& requestHeadersString() const;
+    void setRequestHeadersString(const QString requestHeadersString);
+    int requestHeadersCheck() const;
+    void setRequestHeadersCheck(int requestHeadersCheck);
+    int readFromFile() const;
+    void setReadFromFile(int readFromFile);
+    bool saveToFile() const;
+    void setSaveToFile(bool saveToFile);
+private:
+    int m_requestType;
+    QString m_requestString;
+    QString m_postString;
+    int m_postStringCheck;
+    QString m_requestHeadersString;
+    int m_requestHeadersCheck;
+    int m_readFromFile;
+    bool m_saveToFile;
+};
+
+#endif // RAWREQUESTSETTINGS_H

@@ -1,0 +1,73 @@
+#-------------------------------------------------
+#
+# Project created by QtCreator 2010-11-08T14:44:01
+#
+#-------------------------------------------------
+
+QT       += core gui webkit network
+
+TARGET = taskpro
+TEMPLATE = app
+
+
+SOURCES += main.cpp\
+        mainwindow.cpp \
+    reminderdialog.cpp \
+    finddialog.cpp \
+    helpdialog.cpp \
+    errordialog.cpp \
+    emaildialog.cpp \
+    httpcommunicator.cpp \
+    settings.cpp \
+    rawrequestsettings.cpp
+
+HEADERS  += mainwindow.h \
+    reminderdialog.h \
+    finddialog.h \
+    helpdialog.h \
+    errordialog.h \
+    emaildialog.h \
+    settings.h \
+    httpcommunicator.h \
+    httpcommunicator.h \
+    rawrequestsettings.h
+
+FORMS    += mainwindow.ui \
+    reminderdialog.ui \
+    finddialog.ui \
+    helpdialog.ui \
+    errordialog.ui \
+    emaildialog.ui
+
+symbian {
+    TARGET.UID3 = 0xe5022f84
+    # TARGET.CAPABILITY += 
+    TARGET.EPOCSTACKSIZE = 0x14000
+    TARGET.EPOCHEAPSIZE = 0x020000 0x800000
+    TARGET.CAPABILITY += NetworkServices
+}
+
+OTHER_FILES += Done.png\
+            red.png\
+    myappico.ico \
+    icon_1.svg \
+    clock.png \
+    search.png
+
+RC_FILE = myapp.rc
+
+RESOURCES += \
+    donelogo.qrc\
+
+symbian {
+    ICON = icon_1.svg
+}
+
+customrules.pkg_prerules = \
+        "; Localised Vendor name" \
+        "%{\"Redflower Inc\"}" \
+        " " \
+        "; Unique Vendor name" \
+        ":\"Redflower Inc\""
+
+DEPLOYMENT += customrules

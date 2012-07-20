@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/images">
+        <file>Done.png</file>
+        <file>Incomplete.gif</file>
+        <file>red.png</file>
+        <file>myappico.ico</file>
+    </qresource>
+</RCC>

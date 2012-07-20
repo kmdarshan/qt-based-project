@@ -1,0 +1,112 @@
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
+
+#include <QMainWindow>
+#include <QListWidgetItem>
+#include <QNetworkReply>
+#include <QNetworkAccessManager>
+#include <QFileInfo>
+#include <QObject>
+#include <QUrl>
+#include <QNetworkAccessManager>
+class HttpCommunicator;
+class QNetworkReply;
+class QNetworkRequest;
+class QIODevice;
+class QFile;
+#include <QNetworkConfigurationManager>
+namespace Ui {
+    class MainWindow;
+}
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    QString getSyncEmail();
+    QString getSyncPin();
+    explicit MainWindow(QWidget *parent = 0);
+    ~MainWindow();
+    void checkEmail();
+    QString getEmail();
+    QString getPin();
+    void checkPin();
+    void createFiles();
+    void displayErrorbox(QString qError);
+    //QNetworkAccessManager m_manager2;
+    QNetworkAccessManager m_manager;
+    QNetworkRequest* m_networkRequest;
+    QNetworkReply* m_networkReply;
+    void sendHttpRequests(QString url);
+    static void encodeQueryItems(QUrl& url);
+    QString m_networkReplyBody;
+    int m_downloadProgress;
+    int m_uploadProgress;
+    QUrl m_url;
+    void appendHeaders();
+    HttpCommunicator* m_httpCommunicator;
+
+    QString m_syncPost;
+    QString m_syncPassword;
+    QString m_syncEmail;
+    //For httprequest for SYNC
+    QUrl url;
+    QNetworkAccessManager qnam;
+    //QNetworkConfigurationManager qconfnet;
+    QNetworkReply *reply;
+    int httpGetId;
+    bool httpRequestAborted;
+    int retryCount;
+    void startRequest(QUrl url);
+    QFile *file;
+    void displayAllSyncPosts();
+    void setEmail();
+    void setPin();
+private:
+    Ui::MainWindow *ui;
+
+signals:
+  void finishedRequest();
+private slots:
+  void on_pushButton_8_clicked();
+  void on_pushButton_6_clicked();
+  void on_pushButton_7_clicked();
+  void on_pushButton_5_clicked();
+  void setupSyncPosts();
+    void on_actionBackup_All_Posts_2_triggered();
+    //void on_actionBackup_All_Posts_triggered();
+    void on_pushButton_4_clicked();
+    void on_pushButton_3_clicked();
+    void on_pushButton_2_clicked();
+    void on_pushButton_clicked();
+    void clearDoneTasks();
+    void clearAllTasks();
+    void WriteToUI();
+    void setReminder();
+    //void setEmail();
+    void backupPosts();
+    //void setPin();
+    //void displayHelp();
+    void finishedSlot(QNetworkReply* reply);
+    void slotReadyRead();
+    void slotError(QNetworkReply* reply);
+    void downloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    void processResponse();
+    virtual void downloadReadyRead();
+    void slotBackupposts();
+    //Slots for httprequest
+    void downloadFile();
+    void cancelDownload();
+    void httpFinished();
+    void httpReadyRead();
+    void updateDataReadProgress(qint64 bytesRead, qint64 totalBytes);
+    void enableDownloadButton();
+    void slotAuthenticationRequired(QNetworkReply*,QAuthenticator *);
+    void error(QNetworkReply::NetworkError ne);
+
+
+
+
+};
+
+#endif // MAINWINDOW_H

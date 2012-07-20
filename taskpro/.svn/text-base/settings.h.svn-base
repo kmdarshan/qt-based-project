@@ -1,0 +1,16 @@
+#ifndef SETTINGS_H
+#define SETTINGS_H
+
+#include <QSettings>
+
+class Settings
+{
+public:
+    Settings(const QString& groupName);
+    ~Settings();
+protected:
+    QSettings m_settings;
+    const QString groupName;
+};
+
+#endif // SETTINGS_H

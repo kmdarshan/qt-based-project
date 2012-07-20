@@ -1,0 +1,111 @@
+#include "rawrequestsettings.h"
+
+RawRequestSettings::RawRequestSettings() : Settings("RawRequest")
+{
+  readSettings();
+}
+
+RawRequestSettings::~RawRequestSettings()
+{
+  writeSettings();
+}
+
+void RawRequestSettings::writeSettings()
+{
+  m_settings.setValue("requestType", m_requestType);
+  m_settings.setValue("requestString", m_requestString);
+  m_settings.setValue("postString", m_postString);
+  m_settings.setValue("postStringCheck", m_postStringCheck);
+  m_settings.setValue("requestHeaders", m_requestHeadersString);
+  m_settings.setValue("requestHeadersCheck", m_requestHeadersCheck);
+  m_settings.setValue("readFromFile", m_readFromFile);
+  m_settings.setValue("saveToFile", m_saveToFile);
+}
+
+void RawRequestSettings::readSettings()
+{
+  m_requestType = m_settings.value("requestType", 0).toInt();
+  m_requestString = m_settings.value("requestString", QString("")).toString();
+  m_postString = m_settings.value("postString", QString("")).toString();
+  m_postStringCheck = m_settings.value("postStringCheck", 0).toInt();
+  m_requestHeadersString = m_settings.value("requestHeaders",
+                                            QString("")).toString();
+  m_requestHeadersCheck = m_settings.value("requestHeadersCheck", 0).toInt();
+  m_readFromFile = m_settings.value("readFromFile", 0).toInt();
+  m_saveToFile = m_settings.value("saveToFile", false).toBool();
+}
+
+int RawRequestSettings::requestType() const {
+  return m_requestType;
+}
+
+void RawRequestSettings::setRequestType(int requestType) {
+  m_requestType = requestType;
+}
+
+const QString& RawRequestSettings::requestString() const {
+  return m_requestString;
+}
+
+void RawRequestSettings::setRequestString(const QString requestString) {
+  m_requestString = requestString.trimmed();
+}
+
+const QString& RawRequestSettings::postString() const {
+  return m_postString;
+}
+
+void RawRequestSettings::setPostString(const QString postString) {
+  m_postString = postString.trimmed();
+}
+
+int RawRequestSettings::postStringCheckBox() const
+{
+  return m_postStringCheck;
+}
+
+void RawRequestSettings::setPostStringCheckBox(int postStringCheck)
+{
+  m_postStringCheck = postStringCheck;
+}
+
+const QString& RawRequestSettings::requestHeadersString() const
+{
+  return m_requestHeadersString;
+}
+
+void RawRequestSettings::setRequestHeadersString(
+    const QString requestHeadersString)
+{
+  m_requestHeadersString = requestHeadersString.trimmed();
+}
+
+int RawRequestSettings::requestHeadersCheck() const
+{
+  return m_requestHeadersCheck;
+}
+
+void RawRequestSettings::setRequestHeadersCheck(int requestHeadersCheck)
+{
+  m_requestHeadersCheck = requestHeadersCheck;
+}
+
+int RawRequestSettings::readFromFile() const
+{
+  return m_readFromFile;
+}
+
+void RawRequestSettings::setReadFromFile(int readFromFile)
+{
+  m_readFromFile = readFromFile;
+}
+
+bool RawRequestSettings::saveToFile() const
+{
+  return m_saveToFile;
+}
+
+void RawRequestSettings::setSaveToFile(bool saveToFile)
+{
+  m_saveToFile = saveToFile;
+}

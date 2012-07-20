@@ -1,0 +1,1367 @@
+#include "mainwindow.h"
+#include "ui_mainwindow.h"
+#include "QList"
+#include "QListWidgetItem"
+#include "QFile"
+#include "QString"
+#include "QTextStream"
+#include "QMessageBox"
+#include "QPalette"
+#include "QDebug"
+#include "QLabel"
+#include "QCompleter"
+#include "QNetworkAccessManager"
+#include "QNetworkRequest"
+#include "QNetworkReply"
+#include "QMessageBox"
+#include "QDateTime"
+#include "QDebug"
+#include <sstream>
+#include <QString>
+#include "finddialog.h"
+#include "dialog.h"
+#include <QGridLayout>
+//#include <QSqlDatabase>
+#include "httpcommunicator.h"
+#define TASK_DB_NAME "taskproDB.txt"
+#define EMAIL "email.txt"
+#define PIN "pin.txt"
+#define WEB_ADDRESS "http://www.kmdarshan.com/qt/"
+#define SYNC_EMAIL_FILE "syncEmail.txt"
+#define SYNC_PASSWORD_FILE "syncPassword.txt"
+#define SYNC_POSTS_FILE "syncPosts.txt"
+#define SYNC_URL "http://www.kmdarshan.com/qt/insertAndDisplaySyncPost.php?"
+#define SYNC_URL_DISPLAY "http://www.kmdarshan.com/qt/displaySyncPosts.php?"
+
+MainWindow::MainWindow(QWidget *parent) :
+        QMainWindow(parent),
+        ui(new Ui::MainWindow),
+        m_httpCommunicator(NULL)
+{
+    ui->setupUi(this);
+    this->setWindowTitle("TASK PRO");
+    ui->scrollArea->ensureWidgetVisible(ui->pushButton_7,50,50);
+    //Create all the files needed
+    createFiles();
+    //this->showMaximized();
+    /*ui->plainTextEdit->setPlainText("How to sync: \n"\
+                                    "Enter handle and pin in this phone. "\
+                                    "Give this handle and pin to any other "\
+                                    "person you want to sync your posts with."\
+                                    "\nExample: set handle as tom"\
+                                    "set pin as 12345"\
+                                    "Now give the same pin to your wife or friend."\
+                                    "When they enter the same handle and pin, you both "\
+                                    "would receive the same posts."\
+                                    "\n\nBackup posts:"\
+                                    "Enter email and password."\
+                                    "Goto File->Backup posts\n"\
+                                    "\n\n Reminders:"\
+                                    "Click on remind."\
+                                    "Set the date and time."\
+                                    "Reminders will be send to your email."\
+                                    "\n\n Issues: \nkmdarshan@gmail.com");*/
+
+    QString qEmail=getEmail();
+    QString qPwd=getPin();
+    QString qSEmail=getSyncEmail();
+    QString qSPin=getSyncPin();
+    QString finalStr = "<b>Email: </b> "+qEmail+"<br><br> <b>Password: </b> "+
+                       qPwd+"<br><br> <b>Sync Handle: </b>"+
+                       qSEmail+"<br><br> <b>Sync Pin: </b>"+qSPin;
+    ui->textBrowser->setText(finalStr);
+    connect(ui->actionRemove_Done_Tasks, SIGNAL(triggered()), this, SLOT(clearDoneTasks()));
+    connect(ui->actionRemove_All_Tasks, SIGNAL(triggered()), this, SLOT(clearAllTasks()));
+    connect(ui->listWidget, SIGNAL(itemDoubleClicked(QListWidgetItem*)), this, SLOT(setReminder()));
+    connect(ui->actionSync_Posts, SIGNAL(triggered()),this, SLOT(setupSyncPosts()));
+
+    QString fileName =TASK_DB_NAME;
+    displayAllSyncPosts();
+    checkEmail();
+    checkPin();
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            displayErrorbox("Error: Opening the DB for writing.\n contact admin@kmdarshan.com");
+            return;
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        while (!line.isNull()) {
+            if(line.startsWith("DELETE ", Qt::CaseInsensitive) == true)
+            {
+                line.remove(0,7);
+                QListWidgetItem *item=new QListWidgetItem;
+                QFont f("Helvetica");
+                //f.setStrikeOut(true);
+                item->setFont(f);
+                item->setIcon(QIcon(":/images/Done.png"));
+                item->setText(line);
+                ui->listWidget->addItem(item);
+            }else{
+                QListWidgetItem *item=new QListWidgetItem;
+                QFont f("Helvetica");
+                //f.setStrikeOut(false);
+                item->setFont(f);
+                item->setIcon(QIcon(":/images/red.png"));
+                item->setText(line);
+                //item=new QListWidgetItem(QIcon(":/images/red.png"),line,ui->listWidget);
+                ui->listWidget->addItem(item);
+            }
+
+            line = in.readLine();
+        }
+        file.close();
+    }
+
+}
+
+#include "MainWindow.h"
+void MainWindow::setupSyncPosts()
+{
+   this->hide();
+   //this->close();
+   //MainWindow *sf=new MainWindow;
+   //qDebug()<<"in sync";
+   //sf->show();
+   //sf->showFullScreen();
+   //sf->showMaximized();
+}
+
+//#include "helpdialog.h"
+/*void MainWindow::displayHelp()
+{
+    //HelpDialog hd;
+    //hd.exec();
+}*/
+#include "errordialog.h"
+void MainWindow::displayErrorbox(QString qError)
+{
+    /*ErrorDialog er;
+    er.displayError(qError);
+    er.exec();*/
+    /*QMessageBox::information(this, tr("Error"),
+                             tr("Handle should not be empty"));*/
+    QMessageBox::information(this, tr("Error"),
+                             qError);
+}
+QString gbackupurl="";
+QTimer* backupTimer;
+long gBackupEpochtime;
+long gBackupEpochStartime;
+void MainWindow::slotBackupposts()
+{
+    //qDebug()<<"inside b slot "<<gbackupurl;
+    //qDebug()<<"current epochtime backup"<<gBackupEpochtime;
+    QString strCurrenttime=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+    QDateTime qdTemptime = QDateTime::fromString(strCurrenttime, "yyyy.MM.dd hh:mm:ss");
+    gBackupEpochtime=qdTemptime.toTime_t();
+    qDebug()<<"end epoch time"<<gBackupEpochtime;
+
+    if((gBackupEpochtime - gBackupEpochStartime)>2)
+    {
+
+        backupTimer->stop();
+        qDebug()<<"timer stopped";
+        sendHttpRequests(gbackupurl);
+    }else
+    {
+        qDebug()<<"Time difference is "<<(gBackupEpochtime - gBackupEpochStartime);
+    }
+}
+
+void MainWindow::backupPosts()
+{
+    //displayErrorbox("Coming soon!!!!");
+    //qDebug()<<"Inside bac pu posts";
+    checkEmail();
+    checkPin();
+
+    QList<QListWidgetItem*> items = ui->listWidget->selectedItems();
+    if(items.size() <1)
+        return;
+    int iCRow = ui->listWidget->currentRow();
+    QListWidgetItem *qlwItem = ui->listWidget->takeItem(iCRow);
+    QString qStr=qlwItem->text();
+    if(qStr.length()<2)
+    {
+        displayErrorbox("No post to backup");
+    }else
+    {
+        if(qStr.startsWith('.')==true)
+        {
+            qStr = qStr;
+            displayErrorbox("cannot backup finished tasks");
+        }
+        else
+        {
+             QString sEmail=getEmail();
+            QString sFinalPath=WEB_ADDRESS;
+            sFinalPath+="insertpost.php?post=";
+            QString sPost;
+            QString sPin=getPin();
+            //Add it to the database
+            sPost=qStr;
+            QString sDate=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+            sDate.replace(" ","+");
+            sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date="+sDate+"&pin="+sPin;
+            sendHttpRequests(sFinalPath);
+            QListWidgetItem *item=new QListWidgetItem;
+            QFont f("Helvetica");
+            //f.setStrikeOut(true);
+            item->setFont(f);
+            item->setIcon(QIcon(":/images/red.png"));
+            item->setText(qStr);
+            /*QListWidgetItem *item;
+                item=new QListWidgetItem(QIcon(":/images/red.png"),qStr,ui->listWidget);*/
+            ui->listWidget->addItem(item);
+            ui->listWidget->setCurrentItem(item);
+        }
+    }
+
+
+
+    /*QList<QListWidgetItem*>::iterator i;
+    QList<QListWidgetItem*> items;
+
+    items = ui->listWidget->findItems(QString("*"), Qt::MatchWrap | Qt::MatchWildcard);
+    for (i = items.begin(); i != items.end(); ++i)
+    {
+        gbackupurl="";
+        QString strCurrenttime=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+        QDateTime qdTemptime = QDateTime::fromString(strCurrenttime, "yyyy.MM.dd hh:mm:ss");
+        gBackupEpochStartime=qdTemptime.toTime_t();
+        qDebug()<<"start epoch time"<<gBackupEpochStartime;
+        //Sample URL
+        //WEB_ADDRESSinsertpost.php?post=darshan+sucks&email=divyadarshankm%40yahoo.com
+        QListWidgetItem *qlwItem;
+        qlwItem=*i;
+        QString qsTxt=qlwItem->text();
+        //QNetworkAccessManager* m_manager = new QNetworkAccessManager(this);
+        QString sDate=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+        sDate.replace(" ","+");
+        ////qDebug()()<<sDate;
+        QString sEmail=getEmail();
+        QString sFinalPath=WEB_ADDRESS;
+        sFinalPath+="insertpost.php?post=";
+        QString sPost;
+        QString sPin=getPin();
+        if(qsTxt.startsWith("."))
+        {
+            sPost="DELETE ";
+            sPost+=qsTxt;
+        }
+        //Add it to the database
+        sPost=qsTxt;
+        sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date="+sDate+"&pin="+sPin;
+        QString strCurrenttime1=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+        QDateTime qdTemptime1 = QDateTime::fromString(strCurrenttime1, "yyyy.MM.dd hh:mm:ss");
+        qDebug()<<"URL "<<sFinalPath;
+        sendHttpRequests(sFinalPath);
+        long epochStartime=qdTemptime1.toTime_t();
+        long diff=0;
+        while(diff < 5)
+        {
+            QString strCurrenttime2=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+            QDateTime qdTemptime2 = QDateTime::fromString(strCurrenttime2, "yyyy.MM.dd hh:mm:ss");
+            long epochendime=qdTemptime2.toTime_t();
+            //qDebug()<<"End time"<<epochendime;
+            diff=epochendime-epochStartime;
+            //qDebug()<<"Diff = >"<<diff;
+            if(m_httpCommunicator->getBackupvariable()=="true")
+            {
+                qDebug()<<"Its true";
+                break;
+            }
+        }
+
+        backupTimer = new QTimer;
+        gbackupurl = sFinalPath;
+        connect(backupTimer, SIGNAL(timeout()), this, SLOT(slotBackupposts()));
+        backupTimer->start(3000);
+
+        qDebug()<<"finished "<<diff;
+
+    }*/
+}
+
+void MainWindow::checkEmail()
+{
+    QString fileName =EMAIL;
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            displayErrorbox("Error: No email has been set. Please set the email. File-> Set EMail.");
+            //QMessageBox::critical(this, tr("Error: No email has been set. Please set the email. File-> Set EMail."));
+        }else
+        {
+            QTextStream in(&file);
+            QString line = in.readLine();
+            if(line.length()<4)
+            {
+                displayErrorbox("Please set your email. \n Click on the SETUP tab.");
+            }
+        }
+    }
+}
+void MainWindow::checkPin()
+{
+    QString fileName =PIN;
+
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            displayErrorbox("Error: Checkpin. Opening DB for pin.");
+            return;
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        if(line.length()<4)
+        {
+            displayErrorbox("Please set your PIN. \n Click on the SETUP tab.");
+        }
+    }
+}
+QString MainWindow::getEmail()
+{
+    QString fileName =EMAIL;
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            displayErrorbox("Error: Could not open file. Contact kmdarshan@gmail.com");
+            return "error";
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        return line;
+    }
+    return "admin@kmdarshan.com";
+}
+QString MainWindow::getPin()
+{
+    QString fileName =PIN;
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            displayErrorbox("Error: Could not open file. Contact kmdarshan@gmail.com");
+            return "error";
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        return line;
+    }
+    return "1234";
+}
+#include "emaildialog.h"
+void MainWindow::setPin()
+{
+
+        QString sEmail=ui->lineEdit_4->text();
+        if(sEmail.length()<3)
+        {
+            displayErrorbox("Please enter correct PIN.\n Length is less than 3.\n");
+            return;
+        }else{
+            QString fileName = PIN;
+            if (fileName != "") {
+                QFile file(fileName);
+                if (!file.open(QIODevice::WriteOnly)) {
+                    displayErrorbox("Error: Could not open file.\n Contact admin@kmdarshan.com");
+                    return;
+                }
+                QTextStream stream(&file);
+                stream<<sEmail;
+                displayErrorbox("Finished saving PIN. thanks!");
+                /*QMessageBox msgBox;
+                msgBox.setText("Finished saving PIN. thanks!");
+                msgBox.setStandardButtons(QMessageBox::Ok);
+                msgBox.exec();*/
+            }
+        }
+
+}
+void MainWindow::setEmail()
+{
+
+        QString sEmail=ui->lineEdit_3->text();
+        if(sEmail.length()<4)
+        {
+            displayErrorbox("Please enter correct email.\n Length is less than 4.\n");
+            return;
+        }
+        else{
+            QString fileName = EMAIL;
+            if (fileName != "") {
+                QFile file(fileName);
+                if (!file.open(QIODevice::WriteOnly)) {
+                    displayErrorbox("Error: Could not open file. Contact admin@kmdarshan.com");
+                    return;
+                }
+                QTextStream stream(&file);
+                stream<<sEmail;
+                displayErrorbox("finished saving email. thanks!");
+                /*QMessageBox msgBox;
+                msgBox.setText("finished saving email. thanks!");
+                msgBox.setStandardButtons(QMessageBox::Ok);
+                msgBox.exec();*/
+            }
+        }
+
+}
+
+MainWindow::~MainWindow()
+{
+    //delete m_manager;
+    //Enter into file
+    QString fileName = TASK_DB_NAME;
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly)) {
+            // error message
+            displayErrorbox("Error: Could not open DB for saving posts. \nContact kmdarshan@gmail.com");
+            //QMessageBox::critical(this, tr("Error: Opening DB for saving posts."));
+            return;
+        } else {
+            QList<QListWidgetItem*> items = ui->listWidget->findItems(QString("*"), Qt::MatchWrap | Qt::MatchWildcard);
+            QList<QListWidgetItem*>::iterator i;
+            QTextStream stream(&file);
+            for (i = items.begin(); i != items.end(); ++i)
+            {
+                //Sample URL
+                //WEB_ADDRESSinsertpost.php?post=darshan+sucks&email=divyadarshankm%40yahoo.com
+
+
+                QListWidgetItem *qlwItem;
+                qlwItem=*i;
+                //QIcon qIcn=qlwItem->icon();
+                QString qsTxt=qlwItem->text();
+                QString qsBeginChar=qsTxt;
+                qsBeginChar.truncate(1);
+                if(qsBeginChar==".")
+                {
+                    stream << "DELETE ";
+                }
+                stream << qsTxt;
+                stream << "\n";
+                stream.flush();
+            }
+            file.close();
+        }
+    }
+    delete ui;
+}
+
+void MainWindow::clearDoneTasks()
+{
+    QList<QListWidgetItem*> items = ui->listWidget->findItems(QString("*"), Qt::MatchWrap | Qt::MatchWildcard);
+    QList<QListWidgetItem*> newListItem;
+    QList<QListWidgetItem*>::iterator itr;
+
+    for (itr=items.begin(); itr!=items.end(); itr++)
+    {
+        QListWidgetItem *qlwItem = *itr;
+        QString qsTxt=qlwItem->text();
+        QString qsBeginChar=qsTxt;
+        qsBeginChar.truncate(1);
+        if(qsBeginChar!=".")
+        {
+            newListItem.push_back(qlwItem);
+        }
+    }
+
+    QString fileName =TASK_DB_NAME;
+
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly)) {
+            displayErrorbox("Could not open db for clearing tasks.\n");
+            return;
+        }
+
+        //QTextStream in(&file);
+        QTextStream stream(&file);
+        for (itr=newListItem.begin(); itr!=newListItem.end(); itr++)
+        {
+            QListWidgetItem *qlwItem;
+            qlwItem=*itr;
+            //QIcon qIcn=qlwItem->icon();
+            QString qsTxt=qlwItem->text();
+            stream << qsTxt;
+            stream << "\n";
+            stream.flush();
+        }
+
+        file.close();
+    }
+
+    ui->listWidget->clear();
+    WriteToUI();
+}
+
+void MainWindow::WriteToUI()
+{
+    //Write to the UI again
+    QString fileName =TASK_DB_NAME;
+
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            displayErrorbox("Could not open file");
+            return;
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        while (!line.isNull()) {
+            if(line.startsWith("DELETE ", Qt::CaseInsensitive) == true)
+            {
+                line.remove(0,7);
+                QListWidgetItem *item;
+                item=new QListWidgetItem(QIcon(":/images/Done.png"),line,ui->listWidget);
+                ui->listWidget->addItem(item);
+            }else{
+                QListWidgetItem *item;
+                item=new QListWidgetItem(QIcon(":/images/red.png"),line,ui->listWidget);
+                ui->listWidget->addItem(item);
+            }
+            line = in.readLine();
+        }
+        file.close();
+    }
+}
+
+void MainWindow::clearAllTasks()
+{
+    ui->listWidget->clear();   
+}
+
+//Method to add posts
+void MainWindow::on_pushButton_clicked()
+{
+    QString qStr=ui->lineEdit->text();
+    if(qStr.size() == 0)
+        return;
+
+    QListWidgetItem *item;
+    item=new QListWidgetItem(QIcon(":/images/red.png"),qStr,ui->listWidget);
+    ui->listWidget->addItem(item);
+    ui->listWidget->setCurrentItem(item);
+}
+
+//Method to set the posts as done
+void MainWindow::on_pushButton_2_clicked()
+{
+    //ui->listWidget->takeItem(iCRow);
+    QList<QListWidgetItem*> items = ui->listWidget->selectedItems();
+    if(items.size() <1)
+        return;
+    int iCRow = ui->listWidget->currentRow();
+    QListWidgetItem *qlwItem = ui->listWidget->takeItem(iCRow);
+    QString qStr=qlwItem->text();
+    QString sPost=qStr;
+    if(qStr.startsWith('.')==true)
+        qStr = qStr;
+    else
+        qStr = "."+qStr;
+    //Delete the posts
+    //WEB_ADDRESSdelete.php?post=divyadsasasda&email=kmdarshan%40gmail.com&date=
+    //QNetworkAccessManager* m_manager = new QNetworkAccessManager(this);
+    QString sEmail=getEmail();
+    QString sFinalPath=WEB_ADDRESS;
+    sFinalPath+="delete.php?post=";
+    sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date=";
+    sendHttpRequests(sFinalPath);
+    ////qDebug()()<<sFinalPath;
+    //m_manager->get(QNetworkRequest(QUrl(sFinalPath)));
+
+    QListWidgetItem *item=new QListWidgetItem;
+    QFont f("Helvetica");
+    //f.setStrikeOut(true);
+    item->setFont(f);
+    item->setIcon(QIcon(":/images/Done.png"));
+    item->setText(qStr);
+    /*QListWidgetItem *item;
+        item=new QListWidgetItem(QIcon(":/images/Done.png"),qStr,ui->listWidget);*/
+    ui->listWidget->addItem(item);
+    ui->listWidget->setCurrentItem(item);
+}
+
+void MainWindow::encodeQueryItems(QUrl& url) {
+    QList<QPair<QString, QString> > queryList = url.queryItems();
+    for (int i = 0; i  < queryList.count(); i++) {
+        QPair<QString, QString> pair = queryList[i];
+        QByteArray leftEncoded = QUrl::toPercentEncoding(pair.first);
+        QByteArray rightEncoded = QUrl::toPercentEncoding(pair.second);
+        url.removeQueryItem(pair.first);
+        url.addEncodedQueryItem(leftEncoded, rightEncoded);
+    }
+}
+void MainWindow::appendHeaders() {
+    //  m_networkRequest->setRawHeader("Accept-Encoding", "application/x-www-form-urlencoded");
+    //  m_networkRequest->setRawHeader("User-Agent", "MyOwnBrowser 1.0");
+    /*for (int i = 0; i < m_customHeaders.count(); i++) {
+    const QPair<QByteArray, QByteArray> headerPair = m_customHeaders[i];
+    request->setRawHeader(headerPair.first, headerPair.second);
+  }*/
+}
+void MainWindow::downloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+{
+    if (bytesTotal > 0) {
+        //qDebug()()<<"In download progress > 0";
+    }
+    else {
+        //qDebug()()<<"In download progress = 0";
+    }
+}
+void MainWindow::processResponse()
+{
+
+
+    const QNetworkReply* networkReply = m_networkReply;
+    if (networkReply != NULL) {
+        qDebug()<<"Inside process response";
+        //m_httpCommunicator->setBackupvariable("true");
+        /*const QList<QByteArray> headerListByetArray = networkReply->rawHeaderList();
+        QString headerListString;
+        for (int i = 0; i < headerListByetArray.length(); i++) {
+            headerListString.append(headerListByetArray[i]);
+            headerListString.append(":");
+            headerListString.append(networkReply->rawHeader(headerListByetArray[i]));
+            headerListString.append("\n");
+        }*/
+        //qDebug()()<<"inside process response";
+        /*if (networkReply->error() == QNetworkReply::NoError) {
+            QString boby = m_networkReplyBody;
+            if (boby.length() == 0) {
+                boby = tr("Request Succeeded.");
+                //qDebug()()<<boby;
+            }
+
+        }
+        // Some http error received
+        else {
+            // handle errors here
+            //ui->m_textBrowserResp->append(networkReply->errorString());
+            //qDebug()()<<"networkReply->errorString() ->"<<networkReply->errorString();
+        }*/
+    }
+
+}
+void MainWindow::downloadReadyRead()
+{
+    QByteArray bytes = m_networkReply->readAll();  // bytes
+    m_networkReplyBody = m_networkReplyBody + bytes; // string
+    //qDebug()()<<"In download ready read";
+}
+
+
+void MainWindow::sendHttpRequests(QString url)
+{
+    //qDebug()()<<"inside send";
+
+    // Pick the headers
+    QList<QPair<QByteArray, QByteArray> > headers;
+    if (!HttpCommunicator::splitIntoHeaders("",
+                                            headers)) {
+        //qDebug()()<<"Error in sploit";
+        return;
+    }
+
+    // Pick request body if needed
+    QByteArray postData("");
+    //QFile* file = NULL;
+
+
+    bool saveToFile = false;
+
+    if (m_httpCommunicator) {
+        delete m_httpCommunicator;
+        m_httpCommunicator = NULL;
+    }
+
+    //qDebug()()<<"inside send 2";
+    QString strGet="GET";
+    // Proceed with request if header parsing is through
+    HttpCommunicator::HttpRequestType requestType =
+            HttpCommunicator::httpRequestTypeForText(strGet);
+
+    //qDebug()()<<"post data"<<postData;
+    //qDebug()()<<"headers "<<headers;
+    //qDebug()()<<"request type"<<requestType;
+    m_httpCommunicator = new HttpCommunicator(requestType,
+                                              url,
+                                              postData, headers, saveToFile);
+
+    connect(m_httpCommunicator, SIGNAL(finishedRequest()), this,
+            SLOT(processResponse()));
+    m_httpCommunicator->makeRequest();
+
+}
+void MainWindow::slotReadyRead()
+{
+
+    //QByteArray bytes = m_networkReply->readAll();
+    ////qDebug()()<<"ready read"<<bytes;
+    //displayErrorbox("finished ready read");
+}
+void MainWindow::slotError(QNetworkReply *reply)
+{
+    //qDebug()()<<"slotError";
+    //displayErrorbox("network error");
+}
+
+/*
+void MainWindow::on_lineEdit_textEdited(QString)
+{
+    QList<QListWidgetItem*> items = ui->listWidget->findItems(QString("*"), Qt::MatchWrap | Qt::MatchWildcard);
+    QList<QListWidgetItem*>::iterator itr;
+    if(items.size()<1)
+        printf("Error: Size is 0 \n");
+    else
+    {
+        QStringList taskList;
+        for (itr=items.begin(); itr!=items.end(); itr++)
+        {
+            QListWidgetItem *qlwItem=new QListWidgetItem;
+            qlwItem=*itr;
+            QString qsTxt=(QString)qlwItem->text();
+            ////qDebug()()<<qsTxt;
+            taskList.append(qsTxt);
+        }
+        QCompleter *completer = new QCompleter(taskList, this);
+        completer->setCaseSensitivity(Qt::CaseInsensitive);
+        ui->lineEdit->setCompleter(completer);
+    }
+}*/
+void MainWindow::setReminder()
+{
+    //check if this is a finished task
+    //if its a finished task, we cannot set reminders on them
+    //send a message
+    QListWidgetItem *qlwItem = ui->listWidget->currentItem();
+    QString sPost=qlwItem->text();
+    if(sPost.startsWith("."))
+    {
+        QMessageBox msgBox;
+        msgBox.setText("You cannot set reminder's on finished tasks!!");
+        msgBox.setStandardButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+    Dialog dlg;
+    dlg.adjustSize();
+    if(dlg.exec() == QDialog::Accepted)
+    {
+        QString fileName = EMAIL;
+        if (fileName != "") {
+            QFile file(fileName);
+            if (!file.open(QIODevice::ReadWrite)) {
+                displayErrorbox("Reminder:Could not open file");
+                return;
+            }
+            QTextStream in(&file);
+            QString line = in.readLine();
+            if (line.length()<4) {
+                displayErrorbox("Please enter the email address in the text box.and then try");
+                return;
+            }
+
+        }
+
+        QString strDateTime = dlg.getDate()+" "+dlg.getTime();
+
+        //qDebug()()<<"setReminder";
+        QDateTime qdTemptime = QDateTime::fromString(strDateTime, "MM/dd/yyyy h:m:s AP");
+        //qDebug()()<<qdTemptime;
+        long iEpochtime=qdTemptime.toTime_t();
+        //qDebug()()<<iEpochtime;
+        QString sEpochtime;
+        std::stringstream ss;
+        ss << iEpochtime;
+        sEpochtime= QString::fromStdString(ss.str());
+
+        QString sDate=qdTemptime.toString("yyyy.MM.dd h:m:s");
+        sDate.replace(" ","+");
+        sDate.replace(".","/");
+        //qDebug()()<<"Date ="<<sDate;
+        QListWidgetItem *qlwItem = ui->listWidget->currentItem();
+        QString sPost=qlwItem->text();
+        QString sEmail=getEmail();
+        QString sFinalPath=WEB_ADDRESS;
+        sFinalPath+="insert.php?post=";
+        sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date="+sDate+"&epochtime="+sEpochtime;
+        sendHttpRequests(sFinalPath);
+        //qDebug()()<<"Inside SetReminder"<<sFinalPath;
+        //QNetworkReply *qreply=m_manager->get(QNetworkRequest(QUrl(sFinalPath)));
+
+    }
+}
+
+//search items
+//sync window open
+void MainWindow::on_pushButton_3_clicked()
+{
+    /*this->hide();
+    //this->close();
+    MainWindow *sf=new MainWindow;
+    qDebug()<<"in sync";
+    sf->showMaximized();*/
+    QList<QListWidgetItem*> items;
+    QString qSearchstring=ui->lineEdit->text();
+    items = ui->listWidget->findItems(qSearchstring+"*", Qt::MatchWrap | Qt::MatchWildcard);
+    FindDialog fd;
+    fd.displayPosts(items);
+    fd.exec();
+}
+
+//Adding reminders from the push button
+void MainWindow::on_pushButton_4_clicked()
+{
+    QString sPost=ui->lineEdit->text();
+    if(sPost.length()<1)
+    {
+        displayErrorbox("There is no post to be reminded of!!!!");
+        return;
+    }
+
+    //check if this is a finished task
+    //if its a finished task, we cannot set reminders on them
+    //send a message
+    Dialog dlg;
+    if(dlg.exec() == QDialog::Accepted)
+    {
+        QListWidgetItem *item=new QListWidgetItem;
+        QFont f("Helvetica");
+        item->setFont(f);
+        item->setIcon(QIcon(":/images/red.png"));
+        item->setText(sPost);
+        ui->listWidget->addItem(item);
+        ui->listWidget->setCurrentItem(item);
+        //qDebug()()<<"Inside push button";
+        QString strDateTime = dlg.getDate()+" "+dlg.getTime();
+        //qDebug()()<<"String Date=> "<<strDateTime;
+        QDateTime qdTemptime = QDateTime::fromString(strDateTime, "MM/dd/yyyy h:m:s AP");
+        //qDebug()()<<qdTemptime;
+        long iEpochtime=qdTemptime.toTime_t();
+        //qDebug()()<<iEpochtime;
+        QString sEpochtime;
+        std::stringstream ss;
+        ss << iEpochtime;
+        sEpochtime= QString::fromStdString(ss.str());
+        QString sDate=qdTemptime.toString("yyyy.MM.dd hh:mm:ss");
+        sDate.replace(" ","+");
+        sDate.replace(".","/");
+        //qDebug()()<<sDate;
+        QString sEmail=getEmail();
+        QString sFinalPath=WEB_ADDRESS;
+        sFinalPath+="insert.php?post=";
+        sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date="+sDate+"&epochtime="+sEpochtime;
+        //qDebug()()<<sFinalPath;
+        //QNetworkReply *qreply=m_manager->get(QNetworkRequest(QUrl(sFinalPath)));
+        sendHttpRequests(sFinalPath);
+    }
+}
+
+void MainWindow::finishedSlot(QNetworkReply* reply)
+{
+    //qDebug()()<<"Inside finished slot";
+    Q_ASSERT(m_networkReply == reply);
+    // Reading attributes of the reply
+    // e.g. the HTTP status code
+    QVariant statusCodeV =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    // Or the target URL if it was a redirect:
+    QVariant redirectionTargetUrl =
+            reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
+    // see CS001432 on how to handle this
+
+    //QNetworkReply::NetworkError error = reply->error();
+    // no error received?
+    if (reply->error() == QNetworkReply::NoError)
+    {
+        // read data from QNetworkReply here
+        //qDebug()()<<"Inside signal reply";
+        // Example 2: Reading bytes form the reply
+        // QByteArray bytes = reply.readAll();  // bytes
+        // QString string(bytes); // string
+    }else if (reply->error() == QNetworkReply::HostNotFoundError)
+    {
+        //qDebug()()<<"host Errors here";
+    }
+    // Some http error received
+    else
+    {
+        // handle errors here
+        //qDebug()()<<reply->error()<<"Errors here";
+    }
+    emit finishedRequest();
+    // We receive ownership of the reply object
+    // and therefore need to handle deletion.
+    //delete reply;
+}
+
+void MainWindow::on_actionBackup_All_Posts_2_triggered()
+{
+    //displayErrorbox("Coming soon!!!!");
+    qDebug()<<"Inside bac pu posts 2 trigger";
+    checkEmail();
+    checkPin();
+
+    QList<QListWidgetItem*> items = ui->listWidget->selectedItems();
+    if(items.size() <1)
+        return;
+    int iCRow = ui->listWidget->currentRow();
+    QListWidgetItem *qlwItem = ui->listWidget->takeItem(iCRow);
+    QString qStr=qlwItem->text();
+    if(qStr.length()<1)
+    {
+        displayErrorbox("No post to backup");
+    }else
+    {
+        if(qStr.startsWith('.')==true)
+        {
+            qStr = qStr;
+            displayErrorbox("cannot backup finished tasks");
+        }
+        else
+        {
+            QString sEmail=getEmail();
+            QString sFinalPath=WEB_ADDRESS;
+            sFinalPath+="insertpost.php?post=";
+            QString sPost;
+            QString sPin=getPin();
+            //Add it to the database
+            sPost=qStr;
+            QString sDate=QDateTime::currentDateTime().toString("yyyy.MM.dd hh:mm:ss");
+            sDate.replace(" ","+");
+            sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date="+sDate+"&pin="+sPin;
+            sendHttpRequests(sFinalPath);
+            QListWidgetItem *item=new QListWidgetItem;
+            QFont f("Helvetica");
+            //f.setStrikeOut(true);
+            item->setFont(f);
+            item->setIcon(QIcon(":/images/red.png"));
+            item->setText(qStr);
+            /*QListWidgetItem *item;
+                item=new QListWidgetItem(QIcon(":/images/red.png"),qStr,ui->listWidget);*/
+            ui->listWidget->addItem(item);
+            ui->listWidget->setCurrentItem(item);
+        }
+    }
+}
+
+//Adding iterms to the sync list widget
+void MainWindow::on_pushButton_5_clicked()
+{
+    QString qStr=ui->lineEdit_2->text();
+    if(qStr.size() == 0)
+        return;
+
+    QString email=getSyncEmail();
+    QString pwd=getSyncPin();
+    if(email.endsWith("error") || email.size()==0
+       || pwd.endsWith("error") || pwd.size()==0)
+    {
+        QMessageBox::information(this, tr("Error"),
+                                 tr("Unable to sync post, set HANDLE and PIN.\nClick on the SETUP tab."));
+
+    }else
+    {
+        m_syncEmail=email;
+        m_syncPassword=pwd;
+        m_syncPost=qStr;
+
+        downloadFile();
+    }
+}
+
+void MainWindow::displayAllSyncPosts()
+{
+    QString email=getSyncEmail();
+    QString pwd=getSyncPin();
+    if(email.endsWith("error") || email.size()==0
+       || pwd.endsWith("error") || pwd.size()==0)
+    {
+        QMessageBox::information(this, tr("Error"),
+                                 tr("Unable to sync post, set email and password."));
+
+    }else
+    {
+        m_syncEmail=email;
+        m_syncPassword=pwd;
+
+
+
+    url = SYNC_URL_DISPLAY;
+    //url = "http://www.kmdarshan.com/qt/insertAndDisplaySyncPost.php?post=from post rrrrdaddfrshandfdf&email=kmd%40yahoo.com&pin=darshan";
+    //http://www.kmdarshan.com/qt/insertAndDisplaySyncPost.php?post=rrrrdaddfrshandfdf&email=kmd%40yahoo.com&pin=darshan
+    QString tmpUrl=SYNC_URL_DISPLAY;
+    tmpUrl.append("email="+m_syncEmail+"&pin="+m_syncPassword);
+    //QFileInfo fileInfo(url.path());
+    url = tmpUrl;
+    qDebug()<<url;
+    QFileInfo fileInfo(SYNC_POSTS_FILE);
+    QString fileName = fileInfo.fileName();
+    if (fileName.isEmpty())
+        fileName = "index.html";
+
+    /*if (QFile::exists(fileName)) {
+        if (QMessageBox::question(this, tr("HTTP"),
+                                  tr("There already exists a file called %1 in "
+                                     "the current directory. Overwrite?").arg(fileName),
+                                  QMessageBox::Yes|QMessageBox::No, QMessageBox::No)
+            == QMessageBox::No)
+            return;
+        QFile::remove(fileName);
+    }*/
+
+    file = new QFile(fileName);
+    if (!file->open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr("HTTP"),
+                                 tr("Unable to save the file %1: %2.")
+                                 .arg(fileName).arg(file->errorString()));
+        delete file;
+        file = 0;
+        return;
+    }
+
+//#ifndef Q_WS_MAEMO_5
+    //ui->progressDialog->
+   // ui->progressDialog->setWindowTitle(tr("HTTP"));
+   // ui->progressDialog->setLabelText(tr("Downloading %1.").arg(fileName));
+//#endif
+    ui->pushButton_5->setEnabled(false);
+
+    // schedule the request
+    httpRequestAborted = false;
+    startRequest(url);
+}
+}
+
+void MainWindow::downloadFile()
+{
+
+    url = SYNC_URL;
+    //url = "http://www.kmdarshan.com/qt/insertAndDisplaySyncPost.php?post=from post rrrrdaddfrshandfdf&email=kmd%40yahoo.com&pin=darshan";
+    //http://www.kmdarshan.com/qt/insertAndDisplaySyncPost.php?post=rrrrdaddfrshandfdf&email=kmd%40yahoo.com&pin=darshan
+    QString tmpUrl=SYNC_URL;
+    tmpUrl.append("post="+m_syncPost+"&email="+m_syncEmail+"&pin="+m_syncPassword);
+    //QFileInfo fileInfo(url.path());
+    url = tmpUrl;
+    qDebug()<<url;
+    QFileInfo fileInfo(SYNC_POSTS_FILE);
+    QString fileName = fileInfo.fileName();
+    if (fileName.isEmpty())
+        fileName = "index.html";
+
+    /*if (QFile::exists(fileName)) {
+        if (QMessageBox::question(this, tr("HTTP"),
+                                  tr("There already exists a file called %1 in "
+                                     "the current directory. Overwrite?").arg(fileName),
+                                  QMessageBox::Yes|QMessageBox::No, QMessageBox::No)
+            == QMessageBox::No)
+            return;
+        QFile::remove(fileName);
+    }*/
+
+    file = new QFile(fileName);
+    if (!file->open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr("HTTP"),
+                                 tr("Unable to save the file %1: %2.")
+                                 .arg(fileName).arg(file->errorString()));
+        delete file;
+        file = 0;
+        return;
+    }
+
+//#ifndef Q_WS_MAEMO_5
+    //ui->progressDialog->
+   // ui->progressDialog->setWindowTitle(tr("HTTP"));
+   // ui->progressDialog->setLabelText(tr("Downloading %1.").arg(fileName));
+//#endif
+    ui->pushButton_5->setEnabled(false);
+
+    // schedule the request
+    httpRequestAborted = false;
+    startRequest(url);
+}
+
+void MainWindow::cancelDownload()
+{
+    /*statusLabel->setText(tr("Download canceled."));
+    httpRequestAborted = true;
+    reply->abort();*/
+    ui->pushButton_5->setEnabled(true);
+}
+
+void MainWindow::httpFinished()
+{
+    if (httpRequestAborted) {
+        if (file) {
+            file->close();
+            file->remove();
+            delete file;
+            file = 0;
+        }
+        reply->deleteLater();
+/*#ifndef Q_WS_MAEMO_5
+        progressDialog->hide();
+#endif*/
+        return;
+    }
+/*
+#ifndef Q_WS_MAEMO_5
+    progressDialog->hide();
+#endif*/
+    file->flush();
+    file->close();
+
+
+    QVariant redirectionTarget = reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
+    if (reply->error()) {
+        file->remove();
+        QMessageBox::information(this, tr("HTTP"),
+                                 tr("Download failed: %1.")
+                                 .arg(reply->errorString()));
+        ui->pushButton_5->setEnabled(true);
+    } else if (!redirectionTarget.isNull()) {
+        QUrl newUrl = url.resolved(redirectionTarget.toUrl());
+        if (QMessageBox::question(this, tr("HTTP"),
+                                  tr("Redirect to %1 ?").arg(newUrl.toString()),
+                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+            url = newUrl;
+            reply->deleteLater();
+            file->open(QIODevice::WriteOnly);
+            file->resize(0);
+            startRequest(url);
+            return;
+        }
+    } else {
+        //QString fileName = QFileInfo(QUrl(urlLineEdit->text()).path()).fileName();
+        //statusLabel->setText(tr("Downloaded %1 to %2.").arg(fileName).arg(QDir::currentPath()));
+        ui->pushButton_5->setEnabled(true);
+
+        //After downloading all the files
+        //Add data to the list widget
+        //Lets start reading from the file to display from the text file
+        QString fileName =SYNC_POSTS_FILE;
+        if (fileName != "") {
+            QFile file(fileName);
+            if (!file.open(QIODevice::ReadOnly)) {
+                qDebug()<<"Cannot read file";
+                return;
+            }
+
+            QTextStream in(&file);
+            QString lines = in.readLine();
+            qDebug()<<"Lines "<<lines;
+            QStringList list = lines.split(" $$$ ");
+            qDebug()<<"list "<<list;
+            QListWidgetItem *item;
+
+            for (int i = 0; i < list.size(); ++i)
+            {
+                QString tmpString = list.at(i);
+                if(tmpString.size()>2)
+                {
+                   qDebug()<<"temp str "<<tmpString;
+                   item=new QListWidgetItem(QIcon(":/images/red.png"),tmpString,ui->synclistwidget);
+                   ui->synclistwidget->addItem(item);
+                   ui->synclistwidget->setCurrentItem(item);
+                }
+            }
+
+        }
+    }
+
+    reply->deleteLater();
+    reply = 0;
+    delete file;
+    file = 0;
+}
+
+void MainWindow::httpReadyRead()
+{
+    // this slot gets called every time the QNetworkReply has new data.
+    // We read all of its new data and write it into the file.
+    // That way we use less RAM than when reading it at the finished()
+    // signal of the QNetworkReply
+    if (file)
+        file->write(reply->readAll());
+}
+
+void MainWindow::updateDataReadProgress(qint64 bytesRead, qint64 totalBytes)
+{
+    if (httpRequestAborted)
+        return;
+/*
+#ifndef Q_WS_MAEMO_5
+    progressDialog->setMaximum(totalBytes);
+    progressDialog->setValue(bytesRead);
+#else
+    Q_UNUSED(bytesRead);
+    Q_UNUSED(totalBytes);
+#endif*/
+}
+
+void MainWindow::enableDownloadButton()
+{
+    ui->pushButton_5->setEnabled(true);
+    //downloadButton->setEnabled(!urlLineEdit->text().isEmpty());
+}
+
+void MainWindow::slotAuthenticationRequired(QNetworkReply*,QAuthenticator *authenticator)
+{
+    /*QDialog dlg;
+    Ui::Dialog ui;
+    ui.setupUi(&dlg);
+    dlg.adjustSize();
+    ui.siteDescription->setText(tr("%1 at %2").arg(authenticator->realm()).arg(url.host()));
+
+    // Did the URL have information? Fill the UI
+    // This is only relevant if the URL-supplied credentials were wrong
+    ui.userEdit->setText(url.userName());
+    ui.passwordEdit->setText(url.password());
+
+    if (dlg.exec() == QDialog::Accepted) {
+        authenticator->setUser(ui.userEdit->text());
+        authenticator->setPassword(ui.passwordEdit->text());
+    }*/
+}
+void MainWindow::startRequest(QUrl url)
+{
+    /*if (!qconfnet.isOnline()) {
+        QMessageBox::warning(this, tr("Offline"),
+            tr("The device is currently offline, the network request should trigger a connection attempt automatically"));
+    }*/
+    reply = qnam.get(QNetworkRequest(url));
+    connect(reply, SIGNAL(finished()),
+            this, SLOT(httpFinished()));
+    connect(reply, SIGNAL(readyRead()),
+            this, SLOT(httpReadyRead()));
+    connect(reply, SIGNAL(downloadProgress(qint64,qint64)),
+            this, SLOT(updateDataReadProgress(qint64,qint64)));
+    connect(reply, SIGNAL(error(QNetworkReply::NetworkError)),
+            this, SLOT(error(QNetworkReply::NetworkError)));
+}
+
+void MainWindow::error(QNetworkReply::NetworkError ne)
+{
+    reply->disconnect();
+    reply->deleteLater();
+    QMessageBox::warning(this, tr("HTTP"),
+                         tr("An error has occured: %1 (%2 attempts remaining)").arg(reply->errorString()).arg(retryCount));
+    if (--retryCount > 0)
+        startRequest(url);
+}
+
+QString MainWindow::getSyncEmail()
+{
+    QString fileName =SYNC_EMAIL_FILE;
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            return "error";
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        return line;
+    }
+    return "";
+}
+QString MainWindow::getSyncPin()
+{
+    QString fileName =SYNC_PASSWORD_FILE;
+    if (fileName != "") {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            return "error";
+        }
+        QTextStream in(&file);
+        QString line = in.readLine();
+        return line;
+    }
+    return "";
+}
+
+//For saving the password and email
+void MainWindow::on_pushButton_7_clicked()
+{
+
+    QString fileName = SYNC_EMAIL_FILE;
+    QFile file(fileName);
+    file.open(QIODevice::WriteOnly);
+    QTextStream stream(&file);
+    QString qemail=ui->syncemail->text();
+    if(qemail.size()> 4)
+        stream<<qemail;
+    else
+        QMessageBox::information(this, tr("Error"),
+                                 tr("Handle should be greater than 4 characters"));
+    file.close();
+
+    fileName = SYNC_PASSWORD_FILE;
+    QFile file2(fileName);
+    file2.open(QIODevice::WriteOnly);
+    QTextStream stream2(&file2);
+    QString qpwd=ui->syncpassword->text();
+    if(qpwd.size()> 4)
+        stream2<<qpwd;
+    else
+        QMessageBox::information(this, tr("Error"),
+                                 tr("PIN should not be greater than 4 characters"));
+    file2.close();
+}
+
+//Delete the sync posts
+void MainWindow::on_pushButton_6_clicked()
+{
+    //ui->listWidget->takeItem(iCRow);
+    QList<QListWidgetItem*> items = ui->synclistwidget->selectedItems();
+    if(items.size() <1)
+        return;
+    int iCRow = ui->synclistwidget->currentRow();
+    QListWidgetItem *qlwItem = ui->synclistwidget->takeItem(iCRow);
+    QString qStr=qlwItem->text();
+    QString sPost=qStr;
+    if(qStr.startsWith('.')==true)
+        qStr = qStr;
+    else
+        qStr = "."+qStr;
+    //Delete the posts
+    //WEB_ADDRESSdelete.php?post=divyadsasasda&email=kmdarshan%40gmail.com&date=
+    //QNetworkAccessManager* m_manager = new QNetworkAccessManager(this);
+    QString sEmail=getSyncEmail();
+    QString sFinalPath=WEB_ADDRESS;
+    sFinalPath+="deleteSyncPosts.php?post=";
+    sFinalPath=sFinalPath+sPost+"&email="+sEmail+"&date=";
+    sendHttpRequests(sFinalPath);
+    ////qDebug()()<<sFinalPath;
+    //m_manager->get(QNetworkRequest(QUrl(sFinalPath)));
+}
+
+//For setting personal email
+void MainWindow::on_pushButton_8_clicked()
+{
+    setEmail();
+    setPin();
+}
+#include <QList>
+void MainWindow::createFiles()
+{
+    QList<QString> qlist;
+    qlist.push_back(EMAIL);
+    qlist.push_back(SYNC_EMAIL_FILE);;
+    qlist.push_back(SYNC_PASSWORD_FILE);;
+    qlist.push_back(PIN);;
+    qlist.push_back(SYNC_POSTS_FILE);;
+    qlist.push_back(TASK_DB_NAME);;
+
+    for (int i = 0; i < qlist.size(); ++i) {
+        QFile file(qlist.at(i));
+        file.open(QIODevice::WriteOnly);
+        QTextStream stream(&file);
+        stream<<"";
+        file.close();
+     }
+
+}

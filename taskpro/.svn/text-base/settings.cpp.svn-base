@@ -1,0 +1,12 @@
+#include "settings.h"
+
+Settings::Settings(const QString& groupName) :
+    m_settings(groupName+".ini", QSettings::IniFormat)
+{
+  m_settings.beginGroup(groupName);
+}
+
+Settings::~Settings()
+{
+  m_settings.endGroup();
+}
